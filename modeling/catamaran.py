@@ -43,7 +43,7 @@ class Catamaran:
         hull_solid = cls.hullSolid(length, width, height, segments)
         hull = scad.minkowski().add(hull_solid).add(
             scad.sphere(r = thickness, segments = segments))
-        servo = scad.cube([24, 13, thickness * 2 + 1], center = True)
+        servo = scad.cube([24, 12.5, thickness * 2 + 1], center = True)
         servo1 = scad.translate([length * 0.3, 0, 0]).add(servo)
         servo2 = scad.translate([length - 30, 0, 0]).add(servo)
         (door_l, door_w) = (length * 0.3, width * 0.6)
@@ -66,36 +66,38 @@ class Catamaran:
         return (hull, wall, lid)
 
     @classmethod
-    def rotorSet(cls, length, width, height, motor_diameter, thickness, segments = 20):
-        bottom = scad.square([length, width])
-        bottom = scad.translate([0, -width / 2]).add(bottom)
-        foot = scad.linear_extrude(height = height, scale = [0.618, 0]).add(bottom)
-        diff_width = width - 2 * thickness
-        bottom = scad.square([length + 2, diff_width])
-        bottom = scad.translate([-1, -diff_width / 2]).add(bottom)
-        foot_diff = scad.linear_extrude(height = diff_width / width * height,
-            scale = [1, 0]).add(bottom)
-        motor_length = length * 0.618
-        motor_set = scad.cylinder(d = motor_diameter + 2 * thickness, h = motor_length,
+    def rotorSet(cls, size, height, shaft_diameter, motor_diameter, motor_length, thickness,
+        segments = 20):
+        rotor_set = scad.cylinder(d1 = size, d2 = shaft_diameter + thickness * 2, h = height,
             segments = segments)
+        shaft_diff = scad.cylinder(d = shaft_diameter, h = height + 1, segments = segments)
+        rotor_set -= shaft_diff
+        motor_set = scad.cylinder(d = motor_diameter + 2 * thickness, h = motor_length,
+            center = True, segments = segments)
         motor_set = scad.rotate([0, 90, 0]).add(motor_set)
         motor_set = scad.translate([0, 0, height]).add(motor_set)
-        motor_diff = scad.cylinder(d = motor_diameter, h = length + 2, segments = segments)
+        motor_diff = scad.cylinder(d = motor_diameter, h = motor_length + 1,
+            center = True, segments = segments)
         motor_diff = scad.rotate([0, 90, 0]).add(motor_diff)
-        motor_diff = scad.translate([-1, 0, height]).add(motor_diff)
-        roter_set = foot + motor_set - foot_diff - motor_diff
-        roter_set = scad.rotate([0, 0, 180]).add(roter_set)
-        return roter_set
+        motor_diff = scad.translate([0, 0, height]).add(motor_diff)
+        shaft_set = scad.cylinder(d = shaft_diameter + 2 * thickness, h = height,
+            segments = segments)
+        shaft_diff = scad.cylinder(d = shaft_diameter, h = height, segments = segments)
+        motor_set = motor_set + shaft_set - motor_diff - shaft_diff
+        return (rotor_set, motor_set)
 
     @classmethod
-    def rudder(cls, length, height, shaft_diameter, segments = 20):
+    def rudder(cls, length, height, shaft_diameter, bush_height, bush_thickness, segments = 20):
         airfoil = scad.polygon(zip(*naca4.naca4("0014", segments = segments)))
         airfoil = scad.translate([-0.4, 0]).add(airfoil)
         airfoil = scad.resize([length, 0], auto = True).add(airfoil)
         rudder = scad.linear_extrude(height = height, scale = 0.618).add(airfoil)
-        shaft = scad.cylinder(d = shaft_diameter, h = height / 3, segments = segments)
-        rudder -= shaft
         rudder = scad.mirror([0, 0, 1]).add(rudder)
+        bush = scad.cylinder(d = shaft_diameter + 2 * bush_thickness, h = bush_height,
+            segments = segments)
+        shaft_diff = scad.cylinder(d = shaft_diameter, h = height / 3 + 1, segments = segments)
+        shaft_diff = scad.translate([0, 0, bush_height - height / 3]).add(shaft_diff)
+        rudder = rudder + bush - shaft_diff
         return rudder
 
     @classmethod
@@ -115,45 +117,48 @@ class Catamaran:
 
     @classmethod
     def rudderSet(cls, diameter, height, thickness, segments = 20):
-        d = diameter + 2 * thickness
-        circle = scad.circle(d = d, segments = segments)
-        circle = scad.translate([d, 0]).add(circle)
-        line = scad.square([0.001, 2 * d])
-        line = scad.translate([0, -d]).add(line)
+        r = diameter / 2 + thickness
+        circle = scad.circle(r = r, segments = segments)
+        circle = scad.translate([r, 0]).add(circle)
+        line = scad.square([0.001,  2 * r])
+        line = scad.translate([0, -r]).add(line)
         diff = scad.circle(r = diameter / 2, segments = segments)
-        diff = scad.translate([d, 0]).add(diff)
+        diff = scad.translate([r, 0]).add(diff)
         slice = scad.hull().add(circle).add(line) - diff
         rudder_set = scad.linear_extrude(height = height).add(slice)
         return rudder_set
 
     @classmethod
-    def frame(cls, width, jib_length, sail_length, thickness_h, thickness_v, segments = 20):
+    def bush(cls, height, diameter, thickness, segments = 20):
+        bush = scad.cylinder(d = diameter + 2 * thickness, h = height, segments = segments)
+        diff = scad.cylinder(d = diameter, h = height, segments = segments)
+        bush -= diff
+        return bush
+
+    @classmethod
+    def frame(cls, width, jib_length, sail_length, thickness_h, thickness_v,
+        mast_set_size, mast_set_height, mast_diameter, segments = 20):
         total_len = jib_length + sail_length
         bar = scad.square([thickness_h, width], center = True)
         end = scad.circle(d = thickness_h, segments = segments)
         end1 = scad.translate([0, -width / 2]).add(end)
         end2 = scad.translate([0, width / 2]).add(end)
         beam_h = end1 + bar + end2
-        beam_h = scad.linear_extrude(height = thickness_v).add(beam_h)
-        beam_h1 = scad.translate([jib_length, 0, 0]).add(beam_h)
-        beam_h2 = scad.translate([total_len, 0, 0]).add(beam_h)
+        beam_h1 = scad.translate([jib_length, 0]).add(beam_h)
+        beam_h2 = scad.translate([total_len, 0]).add(beam_h)
         bar = scad.square([total_len, thickness_h])
         bar = scad.translate([0, -thickness_h / 2]).add(bar)
         beam_v = bar + end
-        beam_v = scad.linear_extrude(height = thickness_v).add(beam_v)
-        return beam_h1 + beam_h2 + beam_v
-    
-    @classmethod
-    def mastSet(cls, size, height, beam_thickness_h, mast_diameter, thickness, segments = 20):
-        mast_set = scad.cylinder(d1 = size, d2 = mast_diameter + 2 * thickness, h = height,
-            segments = segments)
-        diff = scad.cube([size, size, height + 2])
-        diff = scad.translate([beam_thickness_h / 2, beam_thickness_h / 2, -1]).add(diff)
-        for i in range(4):
-            mast_set -= scad.rotate([0, 0, 90 * i]).add(diff)
-        diff = scad.cylinder(d = mast_diameter, h = height + 1, segments = segments)
-        mast_set -= diff
-        return mast_set
+        beams = beam_h1 + beam_h2 + beam_v
+        beams = scad.linear_extrude(height = thickness_v).add(beams)
+        bar = scad.square([thickness_h, mast_set_size], center = True)
+        foot_h = scad.linear_extrude(height = mast_set_height,
+            scale = [1, thickness_h / mast_set_size]).add(bar)
+        foot_v = scad.rotate([0, 0, 90]).add(foot_h)
+        mast_diff = scad.cylinder(d = mast_diameter, h = mast_set_height + 1, segments = segments)
+        mast_set = foot_h + foot_v - mast_diff
+        mast_set = scad.translate([jib_length, 0, thickness_v]).add(mast_set)
+        return beams + mast_set
 
     @classmethod
     def mastBeam(cls, length, width, height, angle, set_height, mast_diameter, thickness,
